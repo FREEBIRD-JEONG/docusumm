@@ -48,9 +48,11 @@ docusumm/
 ### 2. 데이터 흐름 (Data Flow)
 
 1. **사용자 상호작용**: 대시보드에서 텍스트/URL 입력.
-2. **데이터 처리**: API Route가 Gemini 호출 -> 결과 및 로그를 Supabase에 저장.
-3. **크레딧 시스템**: Stripe Webhook이 결제 완료 이벤트를 수신하여 Supabase의 `credits` 컬럼 업데이트.
-4. **알림**: 작업 완료 시 Resend를 통해 이메일 발송.
+2. **요청 접수**: `POST /api/summary`가 입력을 검증하고 `pending` 레코드 + 요약 작업(job)을 생성.
+3. **비동기 처리**: 워커(`GET/POST /api/internal/summary-worker`)가 Gemini를 호출해 `completed/failed`로 업데이트.
+4. **결과 조회**: 프론트는 `GET /api/summaries/[id]` 폴링으로 최종 상태/결과를 반영.
+5. **크레딧 시스템**: Stripe Webhook이 결제 완료 이벤트를 수신하여 Supabase의 `credits` 컬럼 업데이트.
+6. **알림**: 작업 완료 시 Resend를 통해 이메일 발송.
 
 ## 구현 스택 (Implementation Stack)
 
@@ -118,25 +120,38 @@ create table public.credit_transactions (
 
 ## 개발 설정 (Development Setup)
 
-1. **설치**: `npx create-next-app@latest` (src 디렉토리 사용 안 함 옵션 선택).
-2. **환경 변수**: `.env.local`에 Supabase, Gemini, Stripe 키 설정.
-3. **실행**: `npm run dev`.
+1. **설치**: `pnpm install`
+2. **환경 변수**: `.env.local`에 Supabase, Gemini, Stripe 키 설정
+3. **실행**: `pnpm dev`
 
 ## 구현 가이드 (Implementation Guide)
 
 ### 단계 1: UI/UX 프레임워크 (Epic 1)
 
--   Next.js 프로젝트 설정.
--   Tailwind & Shadcn UI 설치.
--   `Sidebar`, `InputPanel`, `SummaryCard` 등 기본 컴포넌트 퍼블리싱 (Mock 데이터 사용).
+-   **E1-S1: 대시보드 레이아웃/내비게이션 셸**
+    -   구현 작업: `app/dashboard/layout.tsx` 기준 레이아웃 골격, 반응형 사이드바, 접근성 속성(`aria-expanded`, 포커스 트랩) 적용.
+    -   완료 조건: 모바일/데스크톱에서 레이아웃 깨짐 없이 렌더링되고 키보드 조작으로 사이드바 토글 가능.
+-   **E1-S2: 입력 패널(Text/YouTube) 컴포넌트**
+    -   구현 작업: 탭 전환 UI, `Textarea` auto-resize, YouTube URL 패턴 검증(클라이언트), 버튼 disabled 상태 처리.
+    -   완료 조건: 유효하지 않은 입력에서 제출 불가, 입력 상태에 따라 즉시 피드백 표시.
+-   **E1-S3: 결과 카드/히스토리 목업 상호작용**
+    -   구현 작업: Mock 데이터 기반 `SummaryCard` + `Sidebar History` 연결, 로딩/빈 상태 컴포넌트 추가.
+    -   완료 조건: 히스토리 클릭 시 결과 카드가 교체되고 로딩/빈 상태 전환이 시각적으로 확인 가능.
 
 ### 단계 2: 핵심 기능 (Epic 2)
 
--   Drizzle ORM 설정 (`db/schema.ts`, `drizzle.config.ts`) 및 Supabase 연결.
--   `lib/gemini` 구현.
--   UI와 `/api/summary` 연결.
--   요약 완료 후 결과를 `summaries` 테이블에 저장하는 로직 구현 (Drizzle 사용).
--   로딩 상태(Loading State) 처리.
+-   **E2-S1: 요약 데이터 모델/저장소 계층**
+    -   구현 작업: `db/schema.ts`에 `summaries` 스키마 정의, Drizzle 마이그레이션 생성, CRUD 함수 작성.
+    -   완료 조건: `pending -> completed/failed` 상태 업데이트가 단일 레코드 기준으로 동작.
+-   **E2-S2: Gemini 서비스 모듈**
+    -   구현 작업: `lib/gemini`에 텍스트/YouTube 입력 처리 함수와 공통 프롬프트 템플릿, 예외 처리 래퍼 구현.
+    -   완료 조건: 입력 타입별 요약이 동일 인터페이스로 호출되며 실패 시 표준 에러 반환.
+-   **E2-S3: `/api/summary` 파이프라인**
+    -   구현 작업: `app/api/summary/route.ts`에서 입력 검증 후 `pending` 저장/작업 큐 등록, 워커에서 Gemini 비동기 처리.
+    -   완료 조건: `POST /api/summary`는 `202 + id/status/summary(null)`를 반환하고, `GET /api/summaries/[id]`도 동일 키(`id/status/summary`)를 포함해 폴링 흐름이 일관되게 동작.
+-   **E2-S4: 프론트엔드 연동/상태 피드백**
+    -   구현 작업: 입력 패널 submit 핸들러, 로딩 인디케이터, 토스트 상태 알림(접수/완료/실패), 성공 시 결과 카드 갱신.
+    -   완료 조건: 중복 제출 방지, 실패 후 재시도 가능, 성공 시 최신 요약이 즉시 UI에 반영.
 
 ### 단계 3: 인증 및 계정 (Epic 3)
 

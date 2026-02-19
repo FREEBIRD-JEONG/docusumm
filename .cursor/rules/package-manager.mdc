@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+# Package Manager Rules
+
+패키지 매니저는 pnpm을 사용합니다.
