@@ -25,11 +25,6 @@ function resolveWorkerTriggerHeaders(): Record<string, string> {
     return { "x-worker-secret": workerSecret };
   }
 
-  const cronSecret = process.env.CRON_SECRET?.trim();
-  if (cronSecret) {
-    return { authorization: `Bearer ${cronSecret}` };
-  }
-
   return {};
 }
 

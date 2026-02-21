@@ -63,14 +63,11 @@ function unauthorized() {
 
 async function runWorker(request: Request) {
   const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
-  const cronSecret = process.env.CRON_SECRET?.trim();
   const requestSecret = request.headers.get("x-worker-secret");
-  const authHeader = request.headers.get("authorization");
-  const isAuthConfigured = Boolean(workerSecret || cronSecret);
+  const isAuthConfigured = Boolean(workerSecret);
   const isWorkerHeaderValid = Boolean(workerSecret && requestSecret === workerSecret);
-  const isCronHeaderValid = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
 
-  if (isAuthConfigured && !isWorkerHeaderValid && !isCronHeaderValid) {
+  if (isAuthConfigured && !isWorkerHeaderValid) {
     return unauthorized();
   }
 
@@ -106,32 +103,6 @@ async function runWorker(request: Request) {
           content: job.originalContent,
           requestId,
         });
-        if (result.usedFallback && job.sourceType === "youtube" && result.fallbackKind === "generic") {
-          const errorCode = result.fallbackReasonCode ?? "GEMINI_UNKNOWN_ERROR";
-          const failureMessage = errorCode === "GEMINI_REQUEST_FAILED"
-            ? `[${errorCode}] 모델 응답을 확보하지 못했습니다 (429 가능). API 키/쿼터를 확인한 뒤 다시 시도해 주세요.`
-            : `[${errorCode}] 모델 응답을 확보하지 못해 요약을 완료하지 않았습니다.`;
-          const durationMs = Date.now() - startedAt;
-          jobDurations.push(durationMs);
-          failureCodes[errorCode] = (failureCodes[errorCode] ?? 0) + 1;
-
-          await failSummaryJob({
-            summaryId: job.summaryId,
-            jobId: job.jobId,
-            attemptCount: job.attemptCount,
-            errorMessage: failureMessage,
-            maxAttempts: resolveMaxAttempts(errorCode, job.attemptCount),
-          });
-          console.info("[summary-worker] job failed (fallback blocked)", {
-            requestId,
-            summaryId: job.summaryId,
-            durationMs,
-            model,
-            errorCode,
-          });
-          failed += 1;
-          continue;
-        }
 
         const summaryText = result.summaryText;
 
