@@ -110,6 +110,38 @@ describe("summary worker route", () => {
     expect(body.failed).toBe(1);
   });
 
+  it("accepts youtube job when generic fallback reason is YOUTUBE_TRANSCRIPT_BLOCKED", async () => {
+    mockedClaimSummaryJobs.mockResolvedValue([
+      {
+        jobId: "job-1",
+        summaryId: "summary-1",
+        attemptCount: 1,
+        sourceType: "youtube",
+        originalContent: "https://www.youtube.com/watch?v=abc123def45",
+      },
+    ]);
+    mockedMarkSummaryProcessing.mockResolvedValue(true);
+    mockedSummarizeWithFallback.mockResolvedValue({
+      summaryText: "TL;DR\n- 대체\n- 요약\n- 결과\n\n전체 요약\n차단으로 대체 요약",
+      usedFallback: true,
+      fallbackReasonCode: "YOUTUBE_TRANSCRIPT_BLOCKED",
+      fallbackKind: "generic",
+    });
+    mockedCompleteSummaryJob.mockResolvedValue(true);
+    mockedGetSummaryOwnerEmail.mockResolvedValue("user@example.com");
+    mockedSendSummaryCompletedEmail.mockResolvedValue({ status: "sent" });
+
+    const response = await POST(buildWorkerRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockedCompleteSummaryJob).toHaveBeenCalledTimes(1);
+    expect(mockedFailSummaryJob).not.toHaveBeenCalled();
+
+    const body = (await response.json()) as { completed: number; failed: number };
+    expect(body.completed).toBe(1);
+    expect(body.failed).toBe(0);
+  });
+
   it("accepts youtube job when transcript_extractive fallback is used", async () => {
     mockedClaimSummaryJobs.mockResolvedValue([
       {
