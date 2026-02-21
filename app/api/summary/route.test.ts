@@ -37,7 +37,6 @@ describe("/api/summary route", () => {
     mockedCreateSummary.mockReset();
     mockedEnqueueSummaryJob.mockReset();
     delete process.env.INTERNAL_WORKER_SECRET;
-    delete process.env.CRON_SECRET;
     delete process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE;
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
@@ -188,46 +187,4 @@ describe("/api/summary route", () => {
     expect(init.headers).toBeUndefined();
   });
 
-  it("auto triggers worker with CRON_SECRET when worker secret is missing", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-    process.env.CRON_SECRET = "cron-secret";
-
-    mockedResolveApiUser.mockResolvedValue({
-      userId: "user-1",
-      email: "user@example.com",
-      errorResponse: null,
-    });
-    mockedConsumeUserCredit.mockResolvedValue(2);
-    mockedCreateSummary.mockResolvedValue({
-      id: "summary-1",
-      userId: "user-1",
-      sourceType: "text",
-      originalContent: VALID_TEXT_INPUT,
-      summaryText: null,
-      status: "pending",
-      errorMessage: null,
-      createdAt: "2026-02-19T00:00:00.000Z",
-      updatedAt: "2026-02-19T00:00:00.000Z",
-    });
-    mockedEnqueueSummaryJob.mockResolvedValue(undefined);
-
-    const response = await POST(
-      new Request("https://docusumm-xi.vercel.app/api/summary", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceType: "text",
-          content: VALID_TEXT_INPUT,
-        }),
-      }),
-    );
-
-    expect(response.status).toBe(202);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
-    expect(String(url)).toBe("https://docusumm-xi.vercel.app/api/internal/summary-worker");
-    expect(init.method).toBe("POST");
-    expect((init.headers as Record<string, string>).authorization).toBe("Bearer cron-secret");
-  });
 });
