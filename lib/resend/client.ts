@@ -97,6 +97,9 @@ export async function sendSummaryCompletedEmail(
       from: `${config.fromName} <${config.fromEmail}>`,
       to: [toEmail],
       subject,
+      headers: {
+        "X-Entity-Ref-ID": `docusumm-${input.summaryId}`,
+      },
       react: SummaryCompletedEmail({
         summaryTitle,
         tldrItems,

@@ -258,7 +258,13 @@ async function fetchPlayerResponseViaInnertube(videoId: string): Promise<PlayerR
     }
 
     const data = (await response.json()) as PlayerResponse;
-    if (!data?.videoDetails && !data?.captions) {
+    const captionTracks =
+      data?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+    if (captionTracks.length === 0) {
+      console.info("[youtube-transcript] innertube has no caption tracks", {
+        videoId,
+        hasVideoDetails: Boolean(data?.videoDetails),
+      });
       return null;
     }
     return data;
