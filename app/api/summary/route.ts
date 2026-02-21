@@ -10,6 +10,7 @@ import {
 } from "@/lib/validators/summary-request";
 
 export const dynamic = "force-dynamic";
+const WORKER_TRIGGER_TIMEOUT_MS = 1_200;
 
 function parseBoolean(value: string | undefined): boolean {
   if (!value) {
@@ -37,20 +38,27 @@ function shouldAutoTriggerWorker(): boolean {
   return true;
 }
 
-function triggerWorkerInBackground(origin: string): void {
+async function triggerWorkerInBackground(origin: string): Promise<void> {
   const headers = resolveWorkerTriggerHeaders();
 
   const workerUrl = new URL("/api/internal/summary-worker", origin);
   const resolvedHeaders = Object.keys(headers).length > 0 ? headers : undefined;
-  void fetch(workerUrl, {
-    method: "POST",
-    headers: resolvedHeaders,
-    cache: "no-store",
-  }).catch((error) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), WORKER_TRIGGER_TIMEOUT_MS);
+  try {
+    await fetch(workerUrl, {
+      method: "POST",
+      headers: resolvedHeaders,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
     console.error("[summary] failed to trigger worker", {
       message: error instanceof Error ? error.message : "unknown error",
     });
-  });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function POST(request: Request) {
@@ -112,7 +120,7 @@ export async function POST(request: Request) {
     });
     await enqueueSummaryJob(summary.id);
     if (shouldAutoTriggerWorker()) {
-      triggerWorkerInBackground(new URL(request.url).origin);
+      await triggerWorkerInBackground(new URL(request.url).origin);
     }
 
     return NextResponse.json(

@@ -21,6 +21,8 @@ describe("/api/summaries/[id] route", () => {
   beforeEach(() => {
     mockedGetSummaryById.mockReset();
     mockedResolveApiUser.mockReset();
+    vi.unstubAllGlobals();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
   });
 
   it("returns auth error response from resolver", async () => {
@@ -52,5 +54,39 @@ describe("/api/summaries/[id] route", () => {
     expect(response.status).toBe(404);
     expect(mockedGetSummaryById).toHaveBeenCalledWith("summary-1", "user-1");
   });
-});
 
+  it("retriggers worker when summary remains pending", async () => {
+    const fetchMock = vi.mocked(fetch);
+    mockedResolveApiUser.mockResolvedValue({
+      userId: "user-1",
+      email: "user@example.com",
+      errorResponse: null,
+    });
+    mockedGetSummaryById.mockResolvedValue({
+      id: "summary-1",
+      userId: "user-1",
+      sourceType: "youtube",
+      originalContent: "https://www.youtube.com/watch?v=abc123def45",
+      summaryText: null,
+      status: "pending",
+      errorMessage: null,
+      createdAt: "2026-02-21T00:00:00.000Z",
+      updatedAt: "2026-02-21T00:00:00.000Z",
+    });
+
+    const response = await GET(new Request("http://localhost/api/summaries/summary-1"), {
+      params: Promise.resolve({ id: "summary-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        href: "http://localhost/api/internal/summary-worker",
+      }),
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
+});
