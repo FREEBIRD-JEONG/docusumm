@@ -36,10 +36,10 @@ const mockedMarkSummaryProcessing = vi.mocked(markSummaryProcessing);
 const mockedSummarizeWithFallback = vi.mocked(summarizeWithFallback);
 const mockedSendSummaryCompletedEmail = vi.mocked(sendSummaryCompletedEmail);
 
-function buildWorkerRequest() {
+function buildWorkerRequest(headers: HeadersInit = { "x-worker-secret": "worker-secret" }) {
   return new Request("http://localhost/api/internal/summary-worker", {
     method: "POST",
-    headers: { "x-worker-secret": "worker-secret" },
+    headers,
   });
 }
 
@@ -55,6 +55,24 @@ describe("summary worker route", () => {
 
     process.env.INTERNAL_WORKER_SECRET = "worker-secret";
     delete process.env.CRON_SECRET;
+  });
+
+  it("returns 401 when auth is configured but request header is missing", async () => {
+    const response = await POST(buildWorkerRequest({}));
+
+    expect(response.status).toBe(401);
+    expect(mockedClaimSummaryJobs).not.toHaveBeenCalled();
+  });
+
+  it("allows request without headers when auth secrets are not configured", async () => {
+    delete process.env.INTERNAL_WORKER_SECRET;
+    delete process.env.CRON_SECRET;
+    mockedClaimSummaryJobs.mockResolvedValue([]);
+
+    const response = await POST(buildWorkerRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(mockedClaimSummaryJobs).toHaveBeenCalledTimes(1);
   });
 
   it("fails youtube job when generic fallback is used", async () => {

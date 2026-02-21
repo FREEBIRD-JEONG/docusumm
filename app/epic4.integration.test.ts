@@ -49,7 +49,8 @@ describe("Epic 4 integrated scenario", () => {
   beforeEach(() => {
     credits = 0;
     delete process.env.INTERNAL_WORKER_SECRET;
-    delete process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE;
+    delete process.env.CRON_SECRET;
+    process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE = "false";
     delete process.env.NEXT_PUBLIC_APP_URL;
 
     mockedResolveApiUser.mockReset();

@@ -19,31 +19,37 @@ function parseBoolean(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
-function shouldAutoTriggerWorker(): boolean {
-  if (!process.env.INTERNAL_WORKER_SECRET) {
-    return false;
+function resolveWorkerTriggerHeaders(): Record<string, string> {
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  if (workerSecret) {
+    return { "x-worker-secret": workerSecret };
   }
 
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (cronSecret) {
+    return { authorization: `Bearer ${cronSecret}` };
+  }
+
+  return {};
+}
+
+function shouldAutoTriggerWorker(): boolean {
   const configured = process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE;
   if (configured !== undefined) {
     return parseBoolean(configured);
   }
 
-  return process.env.NODE_ENV !== "production";
+  return true;
 }
 
 function triggerWorkerInBackground(origin: string): void {
-  const secret = process.env.INTERNAL_WORKER_SECRET;
-  if (!secret) {
-    return;
-  }
+  const headers = resolveWorkerTriggerHeaders();
 
   const workerUrl = new URL("/api/internal/summary-worker", origin);
+  const resolvedHeaders = Object.keys(headers).length > 0 ? headers : undefined;
   void fetch(workerUrl, {
     method: "POST",
-    headers: {
-      "x-worker-secret": secret,
-    },
+    headers: resolvedHeaders,
     cache: "no-store",
   }).catch((error) => {
     console.error("[summary] failed to trigger worker", {

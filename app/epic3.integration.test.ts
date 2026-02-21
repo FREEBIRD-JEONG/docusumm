@@ -101,7 +101,8 @@ describe("Epic 3 integrated scenario", () => {
     mockedRestoreUserCredit.mockReset();
 
     delete process.env.INTERNAL_WORKER_SECRET;
-    delete process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE;
+    delete process.env.CRON_SECRET;
+    process.env.AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE = "false";
 
     mockedCreateSummary.mockImplementation(async ({ originalContent }) => {
       summarySeq += 1;

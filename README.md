@@ -45,9 +45,11 @@ YTDLP_SUB_LANGS=ko.*,ko,en.*,en
 # YTDLP_COOKIES_FROM_BROWSER=chrome
 YTDLP_AUTO_COOKIES_BROWSERS=chrome,brave,safari,firefox
 
-INTERNAL_WORKER_SECRET=
-CRON_SECRET=
-AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=true
+# Optional: default가 true라 미설정 시에도 자동 트리거
+# AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=true
+# Optional: 내부 워커 API 보호용 시크릿
+# INTERNAL_WORKER_SECRET=
+# CRON_SECRET=
 
 RESEND_API_KEY=
 RESEND_FROM_EMAIL=onboarding@resend.dev
@@ -70,8 +72,8 @@ pnpm dev
 
 기본 접속: `http://localhost:3000`
 
-개발 환경에서는 `AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=true`일 때
-요약 요청 직후 내부 워커를 자동 호출합니다.
+개발 환경에서는 기본값으로 요약 요청 직후 내부 워커를 자동 호출합니다.
+필요 시 `AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=false`로 비활성화할 수 있습니다.
 
 YouTube 요약은 공개 영상의 자막을 가져와 처리합니다. 자막이 없는 영상은 실패 상태로 반환됩니다.
 일부 환경에서 YouTube timedtext가 차단되면 `yt-dlp` fallback으로 자막을 수집합니다.
@@ -115,14 +117,20 @@ pnpm email:dev
 
 요약 요청 후 즉시 완료되지 않으면 워커를 수동으로 호출할 수 있습니다.
 
-### x-worker-secret 헤더 방식
+### 기본 방식 (시크릿 미설정)
+
+```bash
+curl -X POST "http://localhost:3000/api/internal/summary-worker"
+```
+
+### x-worker-secret 헤더 방식 (선택)
 
 ```bash
 curl -X POST "http://localhost:3000/api/internal/summary-worker" \
   -H "x-worker-secret: <INTERNAL_WORKER_SECRET>"
 ```
 
-### cron bearer 방식
+### cron bearer 방식 (선택)
 
 ```bash
 curl -X POST "http://localhost:3000/api/internal/summary-worker" \

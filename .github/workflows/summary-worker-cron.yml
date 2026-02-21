@@ -19,12 +19,14 @@ jobs:
             echo "APP_URL secret is missing"
             exit 1
           fi
-          if [ -z "$CRON_SECRET" ]; then
-            echo "CRON_SECRET secret is missing"
-            exit 1
-          fi
 
-          curl --fail --show-error --silent \
-            --request POST \
-            --header "Authorization: Bearer $CRON_SECRET" \
-            "$APP_URL/api/internal/summary-worker"
+          if [ -n "$CRON_SECRET" ]; then
+            curl --fail --show-error --silent \
+              --request POST \
+              --header "Authorization: Bearer $CRON_SECRET" \
+              "$APP_URL/api/internal/summary-worker"
+          else
+            curl --fail --show-error --silent \
+              --request POST \
+              "$APP_URL/api/internal/summary-worker"
+          fi

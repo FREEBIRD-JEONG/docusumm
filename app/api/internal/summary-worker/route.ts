@@ -62,14 +62,15 @@ function unauthorized() {
 }
 
 async function runWorker(request: Request) {
-  const workerSecret = process.env.INTERNAL_WORKER_SECRET;
-  const cronSecret = process.env.CRON_SECRET;
+  const workerSecret = process.env.INTERNAL_WORKER_SECRET?.trim();
+  const cronSecret = process.env.CRON_SECRET?.trim();
   const requestSecret = request.headers.get("x-worker-secret");
   const authHeader = request.headers.get("authorization");
+  const isAuthConfigured = Boolean(workerSecret || cronSecret);
   const isWorkerHeaderValid = Boolean(workerSecret && requestSecret === workerSecret);
   const isCronHeaderValid = Boolean(cronSecret && authHeader === `Bearer ${cronSecret}`);
 
-  if (!isWorkerHeaderValid && !isCronHeaderValid) {
+  if (isAuthConfigured && !isWorkerHeaderValid && !isCronHeaderValid) {
     return unauthorized();
   }
 
