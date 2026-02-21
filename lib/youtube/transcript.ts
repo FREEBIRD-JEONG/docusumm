@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { AppError } from "@/lib/errors/app-error";
+import { fetchRemoteYouTubeTranscript } from "@/lib/youtube/remote-transcript-client";
 import { normalizeYouTubeUrl } from "@/lib/validators/youtube";
 
 interface CaptionTrack {
@@ -66,6 +67,56 @@ const BLOCKED_BODY_MARKERS = [
   "automated queries",
 ];
 const LEGACY_TIMEDTEXT_URL = "https://video.google.com/timedtext";
+
+function parseBoolean(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function shouldAllowLocalTranscriptFallback(): boolean {
+  return parseBoolean(process.env.TRANSCRIPT_REMOTE_FALLBACK_LOCAL);
+}
+
+function buildPromptContext({
+  normalizedUrl,
+  videoId,
+  title,
+  languageCode,
+  transcript,
+}: {
+  normalizedUrl: string;
+  videoId: string;
+  title: string;
+  languageCode: string;
+  transcript: string;
+}): YouTubePromptContext {
+  const normalizedTranscript = clipText(transcript.trim(), TRANSCRIPT_MAX_CHARS);
+  const resolvedTitle = title.trim() || "(확인 불가)";
+  const resolvedLanguageCode = languageCode.trim() || "(yt-dlp)";
+
+  const promptInput = [
+    `YouTube URL: ${normalizedUrl}`,
+    `영상 ID: ${videoId}`,
+    `영상 제목: ${resolvedTitle}`,
+    `자막 언어: ${resolvedLanguageCode}`,
+    "",
+    "영상 자막 텍스트:",
+    normalizedTranscript,
+  ].join("\n");
+
+  return {
+    promptInput,
+    transcript: normalizedTranscript,
+    normalizedUrl,
+    videoId,
+    title: resolvedTitle,
+    languageCode: resolvedLanguageCode,
+  };
+}
 
 function clipText(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
@@ -936,6 +987,47 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
     throw new AppError("영상 ID를 추출하지 못했습니다.", "YOUTUBE_URL_INVALID", 422);
   }
 
+  try {
+    const remote = await fetchRemoteYouTubeTranscript({
+      youtubeUrl: normalizedUrl,
+      requestId: `transcript-${videoId}`,
+      preferredLanguages: NO_TRACK_LANGUAGE_CANDIDATES,
+      maxChars: TRANSCRIPT_MAX_CHARS,
+    });
+
+    console.info("[youtube-transcript] remote transcript succeeded", {
+      videoId,
+      provider: remote.provider,
+      languageCode: remote.languageCode,
+      transcriptChars: remote.transcript.length,
+      durationMs: remote.durationMs,
+    });
+
+    return buildPromptContext({
+      normalizedUrl,
+      videoId: remote.videoId || videoId,
+      title: remote.title,
+      languageCode: remote.languageCode,
+      transcript: remote.transcript,
+    });
+  } catch (error) {
+    const resolvedError =
+      error instanceof AppError
+        ? error
+        : new AppError("외부 transcript worker 호출 중 알 수 없는 오류", "TRANSCRIPT_WORKER_UNAVAILABLE", 502);
+    const localFallbackEnabled = shouldAllowLocalTranscriptFallback();
+
+    console.info("[youtube-transcript] remote transcript failed", {
+      videoId,
+      errorCode: resolvedError.code,
+      localFallbackEnabled,
+    });
+
+    if (!localFallbackEnabled) {
+      throw resolvedError;
+    }
+  }
+
   const playerResponse = await fetchPlayerResponse(videoId);
   const captionTracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
   const rankedTracks = rankCaptionTracks(captionTracks);
@@ -1038,25 +1130,13 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
 
   const title = playerResponse.videoDetails?.title?.trim() || "(확인 불가)";
   const languageCode = selectedTrack?.languageCode?.trim() || "(yt-dlp)";
-
-  const promptInput = [
-    `YouTube URL: ${normalizedUrl}`,
-    `영상 ID: ${videoId}`,
-    `영상 제목: ${title}`,
-    `자막 언어: ${languageCode}`,
-    "",
-    "영상 자막 텍스트:",
-    transcript,
-  ].join("\n");
-
-  return {
-    promptInput,
-    transcript,
+  return buildPromptContext({
     normalizedUrl,
     videoId,
     title,
     languageCode,
-  };
+    transcript,
+  });
 }
 
 export async function buildYouTubePromptInput(content: string): Promise<string> {

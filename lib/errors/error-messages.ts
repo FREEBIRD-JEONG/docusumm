@@ -26,6 +26,10 @@ const CODE_MESSAGE_MAP: Record<string, string> = {
   YOUTUBE_TRANSCRIPT_BLOCKED:
     "YouTube 서버 차단으로 자막을 가져오지 못했습니다. 요청은 실패 처리되었고 차감된 크레딧은 환불되었습니다.",
   YOUTUBE_TRANSCRIPT_UNAVAILABLE: "이 영상은 사용 가능한 자막이 없어 요약할 수 없습니다.",
+  TRANSCRIPT_WORKER_TIMEOUT:
+    "자막 처리 워커 응답 시간이 초과되어 실패했습니다. 요청은 실패 처리되었고 차감된 크레딧은 환불되었습니다.",
+  TRANSCRIPT_WORKER_UNAVAILABLE:
+    "자막 처리 워커 연결에 실패했습니다. 요청은 실패 처리되었고 차감된 크레딧은 환불되었습니다.",
 };
 
 const ERROR_CODE_PATTERN = /\[([A-Z0-9_]+)\]/;

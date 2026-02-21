@@ -172,6 +172,37 @@ describe("summary worker route", () => {
     expect(mockedRestoreUserCredit).not.toHaveBeenCalled();
   });
 
+  it("keeps remote worker timeout failures retryable without refund", async () => {
+    mockedClaimSummaryJobs.mockResolvedValue([
+      {
+        jobId: "job-3b",
+        summaryId: "summary-3b",
+        attemptCount: 1,
+        sourceType: "youtube",
+        originalContent: "https://www.youtube.com/watch?v=abc123def45",
+      },
+    ]);
+    mockedMarkSummaryProcessing.mockResolvedValue(true);
+    mockedSummarizeWithFallback.mockRejectedValue(
+      new AppError("timeout", "TRANSCRIPT_WORKER_TIMEOUT", 504),
+    );
+    mockedFailSummaryJob.mockResolvedValue({
+      terminal: false,
+      canceledByUser: false,
+      userId: "user-1",
+    });
+
+    const response = await POST(buildWorkerRequest());
+
+    expect(response.status).toBe(200);
+    expect(mockedFailSummaryJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxAttempts: 3,
+      }),
+    );
+    expect(mockedRestoreUserCredit).not.toHaveBeenCalled();
+  });
+
   it("does not refund credit when summary was canceled by user", async () => {
     mockedClaimSummaryJobs.mockResolvedValue([
       {

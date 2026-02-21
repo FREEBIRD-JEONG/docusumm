@@ -44,6 +44,10 @@ YTDLP_DISABLED=0
 YTDLP_SUB_LANGS=ko.*,ko,en.*,en
 # YTDLP_COOKIES_FROM_BROWSER=chrome
 YTDLP_AUTO_COOKIES_BROWSERS=chrome,brave,safari,firefox
+TRANSCRIPT_WORKER_URL=https://your-transcript-worker.example.com
+TRANSCRIPT_WORKER_KEY=replace_with_worker_shared_secret
+TRANSCRIPT_WORKER_TIMEOUT_MS=45000
+TRANSCRIPT_REMOTE_FALLBACK_LOCAL=0
 
 # Optional: default가 true라 미설정 시에도 자동 트리거
 # AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=true
@@ -75,9 +79,9 @@ pnpm dev
 개발 환경에서는 기본값으로 요약 요청 직후 내부 워커를 자동 호출합니다.
 필요 시 `AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=false`로 비활성화할 수 있습니다.
 
-YouTube 요약은 공개 영상의 자막을 가져와 처리합니다. 자막이 없는 영상은 실패 상태로 반환됩니다.
-일부 환경에서 YouTube timedtext가 차단되면 `yt-dlp` fallback으로 자막을 수집합니다.
-`YTDLP_COOKIES_FROM_BROWSER`를 지정하면 해당 브라우저 쿠키를 사용하고, 미지정 시 `YTDLP_AUTO_COOKIES_BROWSERS` 순서로 자동 재시도합니다.
+YouTube 요약은 외부 transcript worker에서 자막을 수집한 뒤 Gemini로 요약합니다.
+Production에서는 `TRANSCRIPT_WORKER_URL`/`TRANSCRIPT_WORKER_KEY`를 반드시 설정하고, 기본값(`TRANSCRIPT_REMOTE_FALLBACK_LOCAL=0`)으로 로컬 자막 수집 폴백을 비활성화합니다.
+개발 환경에서만 필요 시 `TRANSCRIPT_REMOTE_FALLBACK_LOCAL=1`로 로컬 폴백을 활성화할 수 있습니다.
 Gemini 429/5xx가 반복되면 `GEMINI_MODEL_CANDIDATES` 순서대로 모델 후보를 자동 시도합니다.
 
 요약이 `completed`로 확정되면 Resend를 통해 완료 알림 메일을 발송합니다.
@@ -147,6 +151,22 @@ curl -X POST "http://localhost:3000/api/internal/summary-worker" \
   "avgDurationMs": 842,
   "failureCodes": {}
 }
+```
+
+## Transcript Worker (외부 배포)
+
+`workers/transcript-worker/server.mjs`는 Vercel 외부에서 실행하는 자막 수집 서비스입니다.
+
+로컬 실행:
+
+```bash
+TRANSCRIPT_WORKER_KEY=replace-me pnpm worker:transcript
+```
+
+헬스체크:
+
+```bash
+curl -X GET "http://localhost:8080/healthz"
 ```
 
 ## 품질 게이트

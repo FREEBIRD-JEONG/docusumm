@@ -31,6 +31,12 @@ describe("toUserFacingErrorMessage", () => {
     );
   });
 
+  it("maps transcript worker unavailable error message", () => {
+    expect(toUserFacingErrorMessage("TRANSCRIPT_WORKER_UNAVAILABLE", "fallback")).toBe(
+      "자막 처리 워커 연결에 실패했습니다. 요청은 실패 처리되었고 차감된 크레딧은 환불되었습니다.",
+    );
+  });
+
   it("returns fallback when message is empty", () => {
     expect(toUserFacingErrorMessage("", "fallback")).toBe("fallback");
   });

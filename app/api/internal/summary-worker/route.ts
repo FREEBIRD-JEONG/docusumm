@@ -22,6 +22,8 @@ const RETRYABLE_ERROR_CODES = new Set([
   "GEMINI_UNKNOWN_ERROR",
   "GEMINI_EMPTY_RESPONSE",
   "GEMINI_OUTPUT_INVALID",
+  "TRANSCRIPT_WORKER_TIMEOUT",
+  "TRANSCRIPT_WORKER_UNAVAILABLE",
 ]);
 
 function extractErrorCode(error: unknown): string {
@@ -189,6 +191,7 @@ async function runWorker(request: Request) {
           durationMs,
           model,
           errorCode,
+          retryable: RETRYABLE_ERROR_CODES.has(errorCode),
           terminal: failResult.terminal,
           canceledByUser: failResult.canceledByUser,
           creditRefunded,
