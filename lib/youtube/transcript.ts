@@ -65,6 +65,7 @@ const BLOCKED_BODY_MARKERS = [
   "captcha",
   "automated queries",
 ];
+const LEGACY_TIMEDTEXT_URL = "https://video.google.com/timedtext";
 
 function clipText(value: string, maxChars: number): string {
   if (value.length <= maxChars) {
@@ -258,14 +259,14 @@ async function fetchPlayerResponseViaInnertube(videoId: string): Promise<PlayerR
     }
 
     const data = (await response.json()) as PlayerResponse;
-    const captionTracks =
-      data?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+    const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
     if (captionTracks.length === 0) {
+      // 자막 트랙이 비어 있어도 player 응답 자체는 유효하므로 반환한다.
+      // 이후 no-track(lang 기반) timedtext 시도를 통해 자막을 직접 조회할 수 있다.
       console.info("[youtube-transcript] innertube has no caption tracks", {
         videoId,
         hasVideoDetails: Boolean(data?.videoDetails),
       });
-      return null;
     }
     return data;
   } catch (error) {
@@ -541,6 +542,26 @@ function buildUnsignedCaptionUrl(videoId: string, track: CaptionTrack, format?: 
   return url.toString();
 }
 
+function buildLegacyTimedTextUrl(videoId: string, track: CaptionTrack, format?: "vtt"): string {
+  const url = new URL(LEGACY_TIMEDTEXT_URL);
+  url.searchParams.set("v", videoId);
+
+  const languageCode = track.languageCode?.trim();
+  if (languageCode) {
+    url.searchParams.set("lang", languageCode);
+  }
+
+  if (track.kind) {
+    url.searchParams.set("kind", track.kind);
+  }
+
+  if (format) {
+    url.searchParams.set("fmt", format);
+  }
+
+  return url.toString();
+}
+
 function scoreSubtitleFile(name: string): number {
   const lowered = name.toLowerCase();
   if (lowered.includes(".ko.")) {
@@ -778,6 +799,8 @@ async function fetchTranscript(
   pushCandidate(buildUnsignedCaptionUrl(videoId, track, "json3"));
   pushCandidate(buildUnsignedCaptionUrl(videoId, track, "vtt"));
   pushCandidate(buildUnsignedCaptionUrl(videoId, track));
+  pushCandidate(buildLegacyTimedTextUrl(videoId, track, "vtt"));
+  pushCandidate(buildLegacyTimedTextUrl(videoId, track));
 
   let lastFetchError: AppError | null = null;
   let sawUnavailable = false;
