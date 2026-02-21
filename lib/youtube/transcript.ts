@@ -44,11 +44,22 @@ const WATCH_TIMEOUT_MS = 12_000;
 const TRANSCRIPT_TIMEOUT_MS = 12_000;
 const TRANSCRIPT_MAX_CHARS = 14_000;
 const YTDLP_TIMEOUT_MS = 45_000;
+const NO_TRACK_LANGUAGE_CANDIDATES = ["ko", "en", "ja"];
 
 const PLAYER_RESPONSE_MARKERS = [
   "var ytInitialPlayerResponse = ",
   "ytInitialPlayerResponse = ",
   'window["ytInitialPlayerResponse"] = ',
+];
+const BLOCKED_BODY_MARKERS = [
+  "consent.youtube.com",
+  "before you continue to youtube",
+  "sign in to confirm you",
+  "unusual traffic",
+  "detected unusual traffic",
+  "www.google.com/sorry",
+  "captcha",
+  "automated queries",
 ];
 
 function clipText(value: string, maxChars: number): string {
@@ -226,8 +237,20 @@ async function fetchPlayerResponse(videoId: string): Promise<PlayerResponse> {
   }
 
   const html = await response.text();
+  const blockedByWatchPage = isBlockedWatchHtmlResponse(
+    response.headers.get("content-type"),
+    html,
+    response.url,
+  );
   const playerResponse = extractPlayerResponse(html);
   if (!playerResponse) {
+    if (blockedByWatchPage) {
+      throw new AppError(
+        "YouTube가 서버 요청을 차단해 영상 정보를 가져오지 못했습니다.",
+        "YOUTUBE_TRANSCRIPT_BLOCKED",
+        502,
+      );
+    }
     throw new AppError(
       "YouTube 메타데이터를 파싱하지 못했습니다.",
       "YOUTUBE_METADATA_FETCH_FAILED",
@@ -368,12 +391,8 @@ function isBlockedHtmlResponse(
   body: string,
   responseUrl: string | undefined,
 ): boolean {
-  const loweredContentType = (contentType ?? "").toLowerCase();
   const loweredBody = body.toLowerCase();
-  const looksLikeHtml =
-    loweredContentType.includes("text/html") ||
-    loweredBody.includes("<html") ||
-    loweredBody.includes("<!doctype html");
+  const looksLikeHtml = isHtmlLikeBody(contentType, loweredBody);
 
   if (!looksLikeHtml) {
     return false;
@@ -387,16 +406,42 @@ function isBlockedHtmlResponse(
     return true;
   }
 
+  return includesBlockedBodyMarker(loweredBody);
+}
+
+function isBlockedWatchHtmlResponse(
+  contentType: string | null,
+  body: string,
+  responseUrl: string | undefined,
+): boolean {
+  const loweredBody = body.toLowerCase();
+  const looksLikeHtml = isHtmlLikeBody(contentType, loweredBody);
+  if (!looksLikeHtml) {
+    return false;
+  }
+
+  if (responseUrl?.includes("consent.youtube.com") || responseUrl?.includes("google.com/sorry")) {
+    return true;
+  }
+
+  if (body.trim().length === 0) {
+    return true;
+  }
+
+  return includesBlockedBodyMarker(loweredBody);
+}
+
+function isHtmlLikeBody(contentType: string | null, loweredBody: string): boolean {
+  const loweredContentType = (contentType ?? "").toLowerCase();
   return (
-    loweredBody.includes("consent.youtube.com") ||
-    loweredBody.includes("before you continue to youtube") ||
-    loweredBody.includes("sign in to confirm you") ||
-    loweredBody.includes("unusual traffic") ||
-    loweredBody.includes("detected unusual traffic") ||
-    loweredBody.includes("www.google.com/sorry") ||
-    loweredBody.includes("captcha") ||
-    loweredBody.includes("automated queries")
+    loweredContentType.includes("text/html") ||
+    loweredBody.includes("<html") ||
+    loweredBody.includes("<!doctype html")
   );
+}
+
+function includesBlockedBodyMarker(loweredBody: string): boolean {
+  return BLOCKED_BODY_MARKERS.some((marker) => loweredBody.includes(marker));
 }
 
 function summarizeBodyHead(rawBody: string): string {
@@ -633,13 +678,6 @@ async function fetchTranscript(
   options?: { skipYtDlpFallback?: boolean },
 ): Promise<string> {
   const baseUrl = track.baseUrl;
-  if (!baseUrl) {
-    throw new AppError(
-      "영상에서 자막 트랙 URL을 찾지 못했습니다.",
-      "YOUTUBE_TRANSCRIPT_UNAVAILABLE",
-      422,
-    );
-  }
 
   const candidates: string[] = [];
   const pushCandidate = (url: string) => {
@@ -649,17 +687,19 @@ async function fetchTranscript(
     candidates.push(url);
   };
 
-  pushCandidate(baseUrl);
-  try {
-    const json3Url = new URL(baseUrl);
-    json3Url.searchParams.set("fmt", "json3");
-    pushCandidate(json3Url.toString());
+  if (baseUrl) {
+    pushCandidate(baseUrl);
+    try {
+      const json3Url = new URL(baseUrl);
+      json3Url.searchParams.set("fmt", "json3");
+      pushCandidate(json3Url.toString());
 
-    const vttUrl = new URL(baseUrl);
-    vttUrl.searchParams.set("fmt", "vtt");
-    pushCandidate(vttUrl.toString());
-  } catch {
-    // Keep original URL fallback only.
+      const vttUrl = new URL(baseUrl);
+      vttUrl.searchParams.set("fmt", "vtt");
+      pushCandidate(vttUrl.toString());
+    } catch {
+      // Keep original URL fallback only.
+    }
   }
 
   pushCandidate(buildUnsignedCaptionUrl(videoId, track, "json3"));
@@ -803,13 +843,6 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
   const playerResponse = await fetchPlayerResponse(videoId);
   const captionTracks = playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
   const rankedTracks = rankCaptionTracks(captionTracks);
-  if (rankedTracks.length === 0) {
-    throw new AppError(
-      "영상에서 사용 가능한 자막을 찾지 못했습니다.",
-      "YOUTUBE_TRANSCRIPT_UNAVAILABLE",
-      422,
-    );
-  }
 
   let selectedTrack: CaptionTrack | null = null;
   let transcript = "";
@@ -817,39 +850,76 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
   let unavailableError: AppError | null = null;
   let lastTranscriptError: AppError | null = null;
 
-  for (let trackIndex = 0; trackIndex < rankedTracks.length; trackIndex += 1) {
-    const track = rankedTracks[trackIndex];
-    try {
-      transcript = await fetchTranscript(track, videoId, { skipYtDlpFallback: true });
-      selectedTrack = track;
-      break;
-    } catch (error) {
-      if (!(error instanceof AppError)) {
-        throw error;
-      }
+  if (rankedTracks.length === 0) {
+    for (let languageIndex = 0; languageIndex < NO_TRACK_LANGUAGE_CANDIDATES.length; languageIndex += 1) {
+      const languageCode = NO_TRACK_LANGUAGE_CANDIDATES[languageIndex];
+      const syntheticTrack: CaptionTrack = { languageCode };
+      try {
+        transcript = await fetchTranscript(syntheticTrack, videoId, { skipYtDlpFallback: true });
+        selectedTrack = syntheticTrack;
+        break;
+      } catch (error) {
+        if (!(error instanceof AppError)) {
+          throw error;
+        }
 
-      lastTranscriptError = error;
-      if (error.code === "YOUTUBE_TRANSCRIPT_BLOCKED") {
-        blockedError = blockedError ?? error;
-      }
-      if (error.code === "YOUTUBE_TRANSCRIPT_UNAVAILABLE") {
-        unavailableError = unavailableError ?? error;
-      }
+        lastTranscriptError = error;
+        if (error.code === "YOUTUBE_TRANSCRIPT_BLOCKED") {
+          blockedError = blockedError ?? error;
+        }
+        if (error.code === "YOUTUBE_TRANSCRIPT_UNAVAILABLE") {
+          unavailableError = unavailableError ?? error;
+        }
 
-      console.info("[youtube-transcript] track attempt failed", {
-        trackIndex,
-        languageCode: track.languageCode ?? null,
-        kind: track.kind ?? null,
-        errorCode: error.code,
-      });
+        console.info("[youtube-transcript] no-track attempt failed", {
+          languageIndex,
+          languageCode,
+          errorCode: error.code,
+        });
+      }
     }
-  }
 
-  if (!transcript && blockedError) {
-    const fallbackTranscript = await fetchTranscriptWithYtDlp(videoId);
-    if (fallbackTranscript) {
-      transcript = fallbackTranscript;
-      selectedTrack = selectedTrack ?? rankedTracks[0];
+    if (!transcript && blockedError) {
+      const fallbackTranscript = await fetchTranscriptWithYtDlp(videoId);
+      if (fallbackTranscript) {
+        transcript = fallbackTranscript;
+      }
+    }
+  } else {
+    for (let trackIndex = 0; trackIndex < rankedTracks.length; trackIndex += 1) {
+      const track = rankedTracks[trackIndex];
+      try {
+        transcript = await fetchTranscript(track, videoId, { skipYtDlpFallback: true });
+        selectedTrack = track;
+        break;
+      } catch (error) {
+        if (!(error instanceof AppError)) {
+          throw error;
+        }
+
+        lastTranscriptError = error;
+        if (error.code === "YOUTUBE_TRANSCRIPT_BLOCKED") {
+          blockedError = blockedError ?? error;
+        }
+        if (error.code === "YOUTUBE_TRANSCRIPT_UNAVAILABLE") {
+          unavailableError = unavailableError ?? error;
+        }
+
+        console.info("[youtube-transcript] track attempt failed", {
+          trackIndex,
+          languageCode: track.languageCode ?? null,
+          kind: track.kind ?? null,
+          errorCode: error.code,
+        });
+      }
+    }
+
+    if (!transcript && blockedError) {
+      const fallbackTranscript = await fetchTranscriptWithYtDlp(videoId);
+      if (fallbackTranscript) {
+        transcript = fallbackTranscript;
+        selectedTrack = selectedTrack ?? rankedTracks[0];
+      }
     }
   }
 
@@ -867,11 +937,11 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
   }
 
   if (!selectedTrack) {
-    selectedTrack = rankedTracks[0];
+    selectedTrack = rankedTracks[0] ?? null;
   }
 
   const title = playerResponse.videoDetails?.title?.trim() || "(확인 불가)";
-  const languageCode = selectedTrack.languageCode?.trim() || "(확인 불가)";
+  const languageCode = selectedTrack?.languageCode?.trim() || "(yt-dlp)";
 
   const promptInput = [
     `YouTube URL: ${normalizedUrl}`,
@@ -899,6 +969,8 @@ export async function buildYouTubePromptInput(content: string): Promise<string> 
 }
 
 export const __testables = {
+  isBlockedHtmlResponse,
+  isBlockedWatchHtmlResponse,
   parseTranscriptFromBody,
   parseXmlTranscript,
   parseVttTranscript,

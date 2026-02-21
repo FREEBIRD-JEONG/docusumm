@@ -21,6 +21,10 @@ interface InputPanelProps {
   onInsufficientCredits?: () => void;
 }
 
+function isSingleTokenInput(value: string): boolean {
+  return value.trim().split(/\s+/).filter(Boolean).length === 1;
+}
+
 export function InputPanel({ onSubmitted, onInsufficientCredits }: InputPanelProps) {
   const [sourceType, setSourceType] = useState<SourceType>("text");
   const [content, setContent] = useState("");
@@ -31,28 +35,35 @@ export function InputPanel({ onSubmitted, onInsufficientCredits }: InputPanelPro
   useAutoResizeTextarea(textareaRef, content);
 
   const trimmed = content.trim();
-  const normalizedYoutubeUrl = sourceType === "youtube" ? normalizeYouTubeUrl(trimmed) : null;
-  const isYoutubeValid = sourceType === "youtube" ? Boolean(normalizedYoutubeUrl) : true;
-  const isInputValid = sourceType === "text" ? trimmed.length >= 40 : isYoutubeValid;
+  const detectedYoutubeUrl = normalizeYouTubeUrl(trimmed);
+  const autoTreatAsYoutube = sourceType === "text" && Boolean(detectedYoutubeUrl) && isSingleTokenInput(trimmed);
+  const effectiveSourceType: SourceType =
+    sourceType === "youtube" || autoTreatAsYoutube ? "youtube" : "text";
+  const normalizedYoutubeUrl = effectiveSourceType === "youtube" ? detectedYoutubeUrl : null;
+  const isYoutubeValid = effectiveSourceType === "youtube" ? Boolean(normalizedYoutubeUrl) : true;
+  const isInputValid = effectiveSourceType === "text" ? trimmed.length >= 40 : isYoutubeValid;
   const placeholder =
     sourceType === "youtube"
       ? "요약할 YouTube URL을 붙여넣어 주세요."
       : "요약하고 싶은 텍스트를 입력하세요...";
   const validationMessage = useMemo(() => {
-    if (sourceType === "youtube" && trimmed && !isYoutubeValid) {
+    if (effectiveSourceType === "youtube" && trimmed && !isYoutubeValid) {
       return "유효한 YouTube URL을 입력해 주세요.";
     }
-    if (sourceType === "text" && trimmed.length > 0 && trimmed.length < 40) {
+    if (effectiveSourceType === "text" && trimmed.length > 0 && trimmed.length < 40) {
       return `최소 40자 이상 입력해 주세요. (${trimmed.length}/40)`;
     }
     return null;
-  }, [isYoutubeValid, sourceType, trimmed]);
+  }, [effectiveSourceType, isYoutubeValid, trimmed]);
   const helperText = useMemo(() => {
+    if (autoTreatAsYoutube) {
+      return "YouTube URL이 감지되어 YouTube 모드로 처리됩니다.";
+    }
     if (sourceType === "youtube") {
       return "예시: https://youtu.be/VIDEO_ID 또는 youtube.com/watch?v=VIDEO_ID";
     }
     return "최소 40자 이상의 텍스트를 입력해 주세요.";
-  }, [sourceType]);
+  }, [autoTreatAsYoutube, sourceType]);
   const characterCountLabel = `${content.length} characters`;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -64,13 +75,15 @@ export function InputPanel({ onSubmitted, onInsufficientCredits }: InputPanelPro
     setIsSubmitting(true);
     setError(null);
     try {
+      const finalSourceType: SourceType =
+        sourceType === "youtube" || autoTreatAsYoutube ? "youtube" : "text";
       const contentToSend =
-        sourceType === "youtube" ? (normalizedYoutubeUrl ?? trimmed) : trimmed;
+        finalSourceType === "youtube" ? (normalizedYoutubeUrl ?? trimmed) : trimmed;
 
-      const response = await createSummaryRequest(sourceType, contentToSend);
+      const response = await createSummaryRequest(finalSourceType, contentToSend);
       onSubmitted({
         id: response.id,
-        sourceType,
+        sourceType: finalSourceType,
         content: contentToSend,
         remainingCredits: response.remainingCredits,
       });

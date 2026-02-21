@@ -99,4 +99,31 @@ describe("youtube transcript parsers", () => {
       await rm(workDir, { recursive: true, force: true });
     }
   });
+
+  it("detects blocked html response for timedtext endpoint", () => {
+    const blocked = __testables.isBlockedHtmlResponse(
+      "text/html; charset=utf-8",
+      "<!doctype html><html><body>captcha required</body></html>",
+      "https://www.youtube.com/api/timedtext?v=test",
+    );
+    expect(blocked).toBe(true);
+  });
+
+  it("detects blocked watch page html", () => {
+    const blocked = __testables.isBlockedWatchHtmlResponse(
+      "text/html; charset=utf-8",
+      "<!doctype html><html><body>Before you continue to YouTube</body></html>",
+      "https://consent.youtube.com",
+    );
+    expect(blocked).toBe(true);
+  });
+
+  it("does not over-detect normal watch page as blocked", () => {
+    const blocked = __testables.isBlockedWatchHtmlResponse(
+      "text/html; charset=utf-8",
+      "<!doctype html><html><script>var ytInitialPlayerResponse = {};</script></html>",
+      "https://www.youtube.com/watch?v=test",
+    );
+    expect(blocked).toBe(false);
+  });
 });
