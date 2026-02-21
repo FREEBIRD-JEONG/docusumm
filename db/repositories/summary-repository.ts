@@ -22,6 +22,12 @@ interface ClaimedJob {
   originalContent: string;
 }
 
+export interface FailSummaryJobResult {
+  terminal: boolean;
+  canceledByUser: boolean;
+  userId: string | null;
+}
+
 function isCanceledMessage(errorMessage: string | null | undefined): boolean {
   return typeof errorMessage === "string" && errorMessage.includes(`[${SUMMARY_CANCELED_CODE}]`);
 }
@@ -388,7 +394,7 @@ export async function failSummaryJob(params: {
   attemptCount: number;
   errorMessage: string;
   maxAttempts: number;
-}): Promise<void> {
+}): Promise<FailSummaryJobResult> {
   const { summaryId, jobId, attemptCount, errorMessage, maxAttempts } = params;
   const shouldRetryByAttempts = attemptCount < maxAttempts;
   const nextAttemptDate = new Date(Date.now() + 30 * 1000);
@@ -399,7 +405,11 @@ export async function failSummaryJob(params: {
     const summary = store.summaries.get(summaryId);
     const job = store.jobs.get(jobId);
     if (!summary || !job) {
-      return;
+      return {
+        terminal: false,
+        canceledByUser: false,
+        userId: null,
+      };
     }
     const now = new Date().toISOString();
     const canceledByUser = isCanceledMessage(summary.errorMessage);
@@ -422,20 +432,33 @@ export async function failSummaryJob(params: {
     job.updatedAt = now;
     store.summaries.set(summaryId, summary);
     store.jobs.set(jobId, job);
-    return;
+    return {
+      terminal: !shouldRetry,
+      canceledByUser,
+      userId: summary.userId ?? null,
+    };
   }
 
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const current = await tx
       .select({
         status: summaries.status,
         errorMessage: summaries.errorMessage,
+        userId: summaries.userId,
       })
       .from(summaries)
       .where(eq(summaries.id, summaryId))
       .limit(1);
 
     const currentSummary = current[0];
+    if (!currentSummary) {
+      return {
+        terminal: false,
+        canceledByUser: false,
+        userId: null,
+      };
+    }
+
     const canceledByUser =
       currentSummary?.status === "failed" && isCanceledMessage(currentSummary.errorMessage);
     const shouldRetry = shouldRetryByAttempts && !canceledByUser;
@@ -458,6 +481,12 @@ export async function failSummaryJob(params: {
         updatedAt: new Date(),
       })
       .where(eq(summaryJobs.id, jobId));
+
+    return {
+      terminal: !shouldRetry,
+      canceledByUser,
+      userId: currentSummary.userId ?? null,
+    };
   });
 }
 

@@ -21,7 +21,7 @@ describe("toUserFacingErrorMessage", () => {
 
   it("maps known code-only message", () => {
     expect(toUserFacingErrorMessage("GEMINI_REQUEST_FAILED", "fallback")).toBe(
-      "요약 모델 호출이 제한되었습니다(429 가능). 잠시 후 다시 시도하고 API 키/쿼터를 확인해 주세요.",
+      "요약 모델 호출이 반복 실패했습니다. 요청은 실패 처리되었고 차감된 크레딧은 환불되었습니다.",
     );
   });
 

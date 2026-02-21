@@ -159,9 +159,15 @@ export function DashboardShell() {
         } else {
           pushToast({
             title: "요약 처리에 실패했습니다.",
-            description: "원문은 유지되며 재시도할 수 있습니다.",
+            description: "요약이 실패했습니다. 차감된 크레딧은 자동 환불됩니다.",
             tone: "error",
           });
+          void getAccountProfileRequest()
+            .then((account) => {
+              setAccountEmail(account.email || "로그인 사용자");
+              setAccountCredits(account.credits);
+            })
+            .catch(() => undefined);
         }
       }
     }

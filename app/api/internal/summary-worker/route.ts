@@ -7,6 +7,7 @@ import {
   getSummaryOwnerEmail,
   markSummaryProcessing,
 } from "@/db/repositories/summary-repository";
+import { restoreUserCredit } from "@/db/repositories/user-repository";
 import { AppError } from "@/lib/errors/app-error";
 import { summarizeWithFallback } from "@/lib/gemini/summarize";
 import { sendSummaryCompletedEmail } from "@/lib/resend/client";
@@ -149,8 +150,6 @@ async function runWorker(request: Request) {
           summaryId: job.summaryId,
           durationMs,
           model,
-          fallbackUsed: result.usedFallback,
-          fallbackReasonCode: result.fallbackReasonCode ?? null,
           emailStatus,
           emailSkipReason,
         });
@@ -162,19 +161,38 @@ async function runWorker(request: Request) {
         jobDurations.push(durationMs);
         failureCodes[errorCode] = (failureCodes[errorCode] ?? 0) + 1;
 
-        await failSummaryJob({
+        const failResult = await failSummaryJob({
           summaryId: job.summaryId,
           jobId: job.jobId,
           attemptCount: job.attemptCount,
           errorMessage: `[${errorCode}] ${errorMessage}`,
           maxAttempts: resolveMaxAttempts(errorCode, job.attemptCount),
         });
+
+        let creditRefunded = false;
+        let refundError: string | null = null;
+        if (failResult.terminal && !failResult.canceledByUser && failResult.userId) {
+          try {
+            const restoredCredits = await restoreUserCredit(failResult.userId);
+            creditRefunded = restoredCredits !== null;
+            if (!creditRefunded) {
+              refundError = "refund-user-not-found";
+            }
+          } catch (restoreError) {
+            refundError = restoreError instanceof Error ? restoreError.message : "unknown refund error";
+          }
+        }
+
         console.info("[summary-worker] job failed", {
           requestId,
           summaryId: job.summaryId,
           durationMs,
           model,
           errorCode,
+          terminal: failResult.terminal,
+          canceledByUser: failResult.canceledByUser,
+          creditRefunded,
+          refundError,
         });
         failed += 1;
       }
