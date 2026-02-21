@@ -46,6 +46,10 @@ const TRANSCRIPT_MAX_CHARS = 14_000;
 const YTDLP_TIMEOUT_MS = 45_000;
 const NO_TRACK_LANGUAGE_CANDIDATES = ["ko", "en", "ja"];
 
+const INNERTUBE_PLAYER_URL = "https://www.youtube.com/youtubei/v1/player";
+const INNERTUBE_CLIENT_NAME = "WEB";
+const INNERTUBE_CLIENT_VERSION = "2.20231219.01.00";
+
 const PLAYER_RESPONSE_MARKERS = [
   "var ytInitialPlayerResponse = ",
   "ytInitialPlayerResponse = ",
@@ -213,7 +217,70 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
   }
 }
 
+async function fetchPlayerResponseViaInnertube(videoId: string): Promise<PlayerResponse | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WATCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(INNERTUBE_PLAYER_URL, {
+      method: "POST",
+      signal: controller.signal,
+      cache: "no-store",
+      headers: {
+        "content-type": "application/json",
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        accept: "*/*",
+        "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        origin: "https://www.youtube.com",
+        referer: "https://www.youtube.com/",
+        "x-youtube-client-name": "1",
+        "x-youtube-client-version": INNERTUBE_CLIENT_VERSION,
+      },
+      body: JSON.stringify({
+        videoId,
+        context: {
+          client: {
+            clientName: INNERTUBE_CLIENT_NAME,
+            clientVersion: INNERTUBE_CLIENT_VERSION,
+            hl: "ko",
+            gl: "KR",
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.info("[youtube-transcript] innertube player not ok", {
+        videoId,
+        status: response.status,
+      });
+      return null;
+    }
+
+    const data = (await response.json()) as PlayerResponse;
+    if (!data?.videoDetails && !data?.captions) {
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.info("[youtube-transcript] innertube player failed", {
+      videoId,
+      message: error instanceof Error ? error.message : "unknown",
+    });
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchPlayerResponse(videoId: string): Promise<PlayerResponse> {
+  // Innertube API 우선 시도 (JSON 기반, HTML 파싱 불필요, 서버 차단 우회에 강함)
+  const innertubeResponse = await fetchPlayerResponseViaInnertube(videoId);
+  if (innertubeResponse) {
+    return innertubeResponse;
+  }
+
+  // 폴백: watch 페이지 HTML에서 ytInitialPlayerResponse 추출
   const watchUrl = `https://www.youtube.com/watch?v=${videoId}&hl=ko`;
 
   let response: Response;
