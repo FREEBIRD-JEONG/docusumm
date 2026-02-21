@@ -269,6 +269,33 @@ export async function summarizeWithGemini({
   return summarizeWithGeminiPrompt({ sourceType, promptInput, requestId });
 }
 
+async function summarizeYouTubeByUrl(
+  youtubeUrl: string,
+  requestId?: string,
+): Promise<string> {
+  const prompt = buildSummaryPrompt("youtube", `YouTube URL: ${youtubeUrl}\n이 영상을 시청하고 내용을 요약해 주세요.`);
+  const raw = await generateWithGemini(prompt, {
+    requestId,
+    fileUri: youtubeUrl,
+    fileMimeType: "video/*",
+  });
+  const normalized = normalizeSummaryText(stripMarkdownDecorations(raw));
+
+  if (!normalized) {
+    throw new AppError("Gemini URL 기반 응답 텍스트가 비어 있습니다.", "GEMINI_OUTPUT_INVALID", 502);
+  }
+
+  if (!validateSummaryFormat(normalized)) {
+    throw new AppError(
+      "Gemini URL 기반 응답이 TL;DR/전체 요약 형식을 충족하지 않습니다.",
+      "GEMINI_OUTPUT_INVALID",
+      502,
+    );
+  }
+
+  return normalized;
+}
+
 export async function summarizeWithFallback(input: SummarizeInput): Promise<SummarizeResult> {
   if (input.sourceType === "youtube") {
     let context: YouTubePromptContext;
@@ -276,6 +303,22 @@ export async function summarizeWithFallback(input: SummarizeInput): Promise<Summ
       context = await buildYouTubePromptContext(input.content);
     } catch (error) {
       const fallbackReasonCode = error instanceof AppError ? error.code : "GEMINI_UNKNOWN_ERROR";
+
+      // 자막 추출 실패 시 Gemini에 YouTube URL을 직접 전달하여 요약 시도
+      const normalized = normalizeYouTubeUrl(input.content);
+      if (normalized) {
+        try {
+          const summaryText = await summarizeYouTubeByUrl(normalized, input.requestId);
+          return { summaryText, usedFallback: false };
+        } catch (urlError) {
+          console.info("[summarize] YouTube URL-based summarization failed, using generic fallback", {
+            requestId: input.requestId,
+            reasonCode: fallbackReasonCode,
+            urlError: urlError instanceof Error ? urlError.message : "unknown",
+          });
+        }
+      }
+
       const summaryText = buildFallbackSummary("youtube", input.content, fallbackReasonCode);
       return { summaryText, usedFallback: true, fallbackReasonCode, fallbackKind: "generic" };
     }

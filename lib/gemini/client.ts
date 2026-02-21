@@ -5,6 +5,8 @@ import { getGeminiRuntimeConfig } from "@/lib/gemini/config";
 
 interface GenerateWithGeminiOptions {
   requestId?: string;
+  fileUri?: string;
+  fileMimeType?: string;
 }
 
 interface GeminiLogPayload {
@@ -197,9 +199,26 @@ export async function generateWithGemini(
       });
 
       try {
+        const contents = options.fileUri
+          ? [
+              {
+                role: "user" as const,
+                parts: [
+                  {
+                    fileData: {
+                      fileUri: options.fileUri,
+                      mimeType: options.fileMimeType ?? "video/*",
+                    },
+                  },
+                  { text: prompt },
+                ],
+              },
+            ]
+          : prompt;
+
         const response = await ai.models.generateContent({
           model,
-          contents: prompt,
+          contents,
           config: {
             abortSignal: controller.signal,
             httpOptions: {
