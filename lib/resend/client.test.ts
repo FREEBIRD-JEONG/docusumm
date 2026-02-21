@@ -37,6 +37,8 @@ const ORIGINAL_ENV: Record<string, string | undefined> = Object.fromEntries(
   ENV_KEYS.map((key) => [key, process.env[key]]),
 );
 
+const fetchMock = vi.fn();
+
 function restoreEnv() {
   for (const key of ENV_KEYS) {
     const value = ORIGINAL_ENV[key];
@@ -52,6 +54,8 @@ describe("sendSummaryCompletedEmail", () => {
   beforeEach(() => {
     resendSendMock.mockReset();
     ResendMock.mockClear();
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
     process.env.RESEND_API_KEY = "re_test_key";
     process.env.RESEND_FROM_EMAIL = "onboarding@resend.dev";
     process.env.RESEND_FROM_NAME = "DocuSumm";
@@ -59,11 +63,15 @@ describe("sendSummaryCompletedEmail", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     restoreEnv();
   });
 
   it("sends summary completion email with DocuSumm subject prefix", async () => {
     resendSendMock.mockResolvedValue({ data: { id: "email-1" }, error: null });
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ title: "앱으로 돈 못버는 이유-1인 개발" }), { status: 200 }),
+    );
 
     const result = await sendSummaryCompletedEmail({
       toEmail: "user@example.com",
@@ -83,7 +91,7 @@ describe("sendSummaryCompletedEmail", () => {
       to: string[];
       react: unknown;
     };
-    expect(body.subject.startsWith("[DocuSumm]")).toBe(true);
+    expect(body.subject).toBe("앱으로 돈 못버는 이유-1인 개발 : [DocuSumm] 요약완료");
     expect(body.from).toContain("DocuSumm");
     expect(body.to).toEqual(["user@example.com"]);
     expect(JSON.stringify(body.react)).toContain("summaryId=summary-1");

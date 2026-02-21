@@ -5,6 +5,7 @@ import {
   buildSummaryCompletedSubject,
   SummaryCompletedEmail,
 } from "@/lib/resend/templates/summary-completed-email";
+import { fetchYouTubeTitle } from "@/lib/youtube/title";
 import { deriveSummaryTitle, extractTldr } from "@/types/summary";
 
 type EmailSkipReason = "invalid-recipient" | "resend-config-missing";
@@ -57,6 +58,21 @@ function normalizeTldrItems(summaryText: string): string[] {
     .slice(0, 3);
 }
 
+async function resolveSummaryTitle(originalContent: string): Promise<string> {
+  const fallbackTitle = deriveSummaryTitle(originalContent);
+
+  try {
+    const youtubeTitle = await fetchYouTubeTitle(originalContent);
+    if (youtubeTitle?.title) {
+      return youtubeTitle.title;
+    }
+  } catch {
+    // Ignore YouTube title lookup failures and keep fallback title.
+  }
+
+  return fallbackTitle;
+}
+
 export async function sendSummaryCompletedEmail(
   input: SendSummaryCompletedEmailInput,
 ): Promise<SendSummaryCompletedEmailResult> {
@@ -71,8 +87,8 @@ export async function sendSummaryCompletedEmail(
   }
 
   const summaryLink = `${resolveAppBaseUrl(input.requestUrl)}/dashboard?summaryId=${encodeURIComponent(input.summaryId)}`;
-  const subject = buildSummaryCompletedSubject();
-  const summaryTitle = deriveSummaryTitle(input.originalContent);
+  const summaryTitle = await resolveSummaryTitle(input.originalContent);
+  const subject = buildSummaryCompletedSubject({ summaryTitle });
   const tldrItems = normalizeTldrItems(input.summaryText);
   const resend = new Resend(config.apiKey);
 

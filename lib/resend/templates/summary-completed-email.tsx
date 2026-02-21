@@ -6,7 +6,7 @@ export interface SummaryCompletedEmailProps {
   summaryLink: string;
 }
 
-const SUBJECT = "[DocuSumm] 요약이 완료되었습니다";
+const SUBJECT_SUFFIX = "[DocuSumm] 요약완료";
 
 const containerStyle = {
   margin: "0 auto",
@@ -49,8 +49,26 @@ const footerStyle = {
   lineHeight: "18px",
 };
 
-export function buildSummaryCompletedSubject(): string {
-  return SUBJECT;
+interface BuildSummaryCompletedSubjectInput {
+  summaryTitle: string;
+}
+
+function normalizeSubjectValue(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncateSubjectTitle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+export function buildSummaryCompletedSubject({
+  summaryTitle,
+}: BuildSummaryCompletedSubjectInput): string {
+  const title = truncateSubjectTitle(normalizeSubjectValue(summaryTitle) || "요약 결과", 72);
+  return `${title} : ${SUBJECT_SUFFIX}`;
 }
 
 export function SummaryCompletedEmail({

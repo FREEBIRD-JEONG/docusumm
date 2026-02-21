@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // React Email preview server generated files
+    ".react-email/**",
   ]),
 ]);
 
