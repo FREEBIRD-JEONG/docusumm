@@ -13,6 +13,6 @@ export function createSupabaseBrowserClient(): SupabaseClient {
   }
 
   const config = assertSupabaseConfig();
-  browserClient = createBrowserClient(config.url, config.anonKey);
+  browserClient = createBrowserClient(config.url, config.publishableKey);
   return browserClient;
 }

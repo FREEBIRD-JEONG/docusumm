@@ -39,7 +39,40 @@ export const summaryJobs = pgTable("summary_jobs", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const creditTransactions = pgTable(
+  "credit_transactions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    amount: integer("amount").notNull(),
+    type: text("type").$type<"bonus" | "charge" | "usage">().notNull(),
+    source: text("source")
+      .$type<"summary_request" | "stripe_checkout" | "manual_adjustment">()
+      .notNull(),
+    packageId: text("package_id"),
+    stripeEventId: text("stripe_event_id"),
+    stripeSessionId: text("stripe_session_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userCreatedAtIdx: index("idx_credit_transactions_user_created_at").on(table.userId, table.createdAt),
+  }),
+);
+
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  stripeEventId: text("stripe_event_id").notNull().unique(),
+  eventType: text("event_type").notNull(),
+  stripeSessionId: text("stripe_session_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export type SummaryRow = typeof summaries.$inferSelect;
 export type SummaryInsert = typeof summaries.$inferInsert;
 export type SummaryJobRow = typeof summaryJobs.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
+export type CreditTransactionRow = typeof creditTransactions.$inferSelect;
+export type StripeWebhookEventRow = typeof stripeWebhookEvents.$inferSelect;

@@ -2,7 +2,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 
 import { getDb } from "@/db/client";
 import { getMemoryStore, type MemoryJob, type MemorySummary } from "@/db/memory-store";
-import { summaryJobs, summaries, type SummaryRow } from "@/db/schema";
+import { summaryJobs, summaries, type SummaryRow, users } from "@/db/schema";
 import type { SourceType, SummaryRecord } from "@/types/summary";
 
 const SUMMARY_CANCELED_CODE = "SUMMARY_CANCELED";
@@ -161,6 +161,29 @@ export async function getSummaryById(
     return null;
   }
   return toSummaryRecord(row);
+}
+
+export async function getSummaryOwnerEmail(summaryId: string): Promise<string | null> {
+  const db = getDb();
+  if (!db) {
+    const store = getMemoryStore();
+    const summary = store.summaries.get(summaryId);
+    if (!summary?.userId) {
+      return null;
+    }
+    return store.users.get(summary.userId)?.email ?? null;
+  }
+
+  const [row] = await db
+    .select({
+      email: users.email,
+    })
+    .from(summaries)
+    .leftJoin(users, eq(summaries.userId, users.id))
+    .where(eq(summaries.id, summaryId))
+    .limit(1);
+
+  return row?.email ?? null;
 }
 
 export async function claimSummaryJobs(limit: number): Promise<ClaimedJob[]> {
@@ -541,4 +564,34 @@ export async function listSummariesByUser(userId: string, limit = 30): Promise<S
     .limit(limit);
 
   return rows.map(toSummaryRecord);
+}
+
+export async function deleteSummariesByUser(userId: string): Promise<number> {
+  const db = getDb();
+  if (!db) {
+    const store = getMemoryStore();
+    const summaryIds = Array.from(store.summaries.values())
+      .filter((summary) => summary.userId === userId)
+      .map((summary) => summary.id);
+    const summaryIdSet = new Set(summaryIds);
+
+    for (const summaryId of summaryIds) {
+      store.summaries.delete(summaryId);
+    }
+
+    for (const job of Array.from(store.jobs.values())) {
+      if (summaryIdSet.has(job.summaryId)) {
+        store.jobs.delete(job.id);
+      }
+    }
+
+    return summaryIds.length;
+  }
+
+  const deletedRows = await db
+    .delete(summaries)
+    .where(eq(summaries.userId, userId))
+    .returning({ id: summaries.id });
+
+  return deletedRows.length;
 }

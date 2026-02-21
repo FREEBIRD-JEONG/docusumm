@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { createSummary, enqueueSummaryJob } from "@/db/repositories/summary-repository";
-import { upsertUserProfile } from "@/db/repositories/user-repository";
-import { getGuestUserEmail, getGuestUserId, isAuthEnabled } from "@/lib/auth/runtime";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { consumeUserCredit, restoreUserCredit } from "@/db/repositories/user-repository";
+import { resolveApiUser } from "@/lib/auth/api-user";
 import { normalizeYouTubeUrl } from "@/lib/validators/youtube";
 import {
   parseCreateSummaryPayload,
@@ -53,51 +52,8 @@ function triggerWorkerInBackground(origin: string): void {
   });
 }
 
-async function resolveUserId(): Promise<{ userId: string; errorResponse: NextResponse | null }> {
-  try {
-    if (!isAuthEnabled()) {
-      const guestUserId = getGuestUserId();
-      await upsertUserProfile({
-        id: guestUserId,
-        email: getGuestUserEmail(guestUserId),
-      });
-      return { userId: guestUserId, errorResponse: null };
-    }
-
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      return {
-        userId: "",
-        errorResponse: NextResponse.json(
-          { error: "로그인이 필요합니다. 다시 로그인해 주세요." },
-          { status: 401 },
-        ),
-      };
-    }
-
-    await upsertUserProfile({
-      id: user.id,
-      email: user.email ?? `${user.id}@local.invalid`,
-    });
-    return { userId: user.id, errorResponse: null };
-  } catch (error) {
-    return {
-      userId: "",
-      errorResponse: NextResponse.json(
-        { error: error instanceof Error ? error.message : "인증 확인 중 오류가 발생했습니다." },
-        { status: 500 },
-      ),
-    };
-  }
-}
-
 export async function POST(request: Request) {
-  const { userId, errorResponse } = await resolveUserId();
+  const { userId, errorResponse } = await resolveApiUser({ ensureProfile: true });
   if (errorResponse) {
     return errorResponse;
   }
@@ -122,6 +78,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validation.message }, { status: 422 });
   }
 
+  let creditCharged = false;
   try {
     const normalizedContent =
       payload.sourceType === "youtube"
@@ -134,6 +91,18 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
+
+    const remainingCredits = await consumeUserCredit(userId);
+    if (remainingCredits === null) {
+      return NextResponse.json(
+        {
+          error: "[INSUFFICIENT_CREDITS] 크레딧이 부족합니다. 크레딧을 충전한 뒤 다시 시도해 주세요.",
+          code: "INSUFFICIENT_CREDITS",
+        },
+        { status: 402 },
+      );
+    }
+    creditCharged = true;
 
     const summary = await createSummary({
       sourceType: payload.sourceType,
@@ -150,10 +119,22 @@ export async function POST(request: Request) {
         id: summary.id,
         status: summary.status,
         summary: summary.summaryText,
+        remainingCredits,
       },
       { status: 202 },
     );
   } catch (error) {
+    if (creditCharged) {
+      try {
+        await restoreUserCredit(userId);
+      } catch (rollbackError) {
+        console.error("[summary] failed to restore credit after error", {
+          message: rollbackError instanceof Error ? rollbackError.message : "unknown rollback error",
+          userId,
+        });
+      }
+    }
+
     return NextResponse.json(
       {
         error:

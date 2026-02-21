@@ -1,11 +1,5 @@
 import { LoginForm } from "@/app/login/login-form";
-
-function sanitizeNextPath(nextPath: string | null | undefined): string {
-  if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//")) {
-    return "/";
-  }
-  return nextPath;
-}
+import { sanitizeNextPath } from "@/lib/auth/next-path";
 
 function mapErrorMessage(errorCode: string | null | undefined): string | null {
   if (!errorCode) {

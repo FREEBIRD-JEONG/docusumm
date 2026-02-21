@@ -31,12 +31,35 @@ export interface MemoryUser {
   updatedAt: string;
 }
 
+export interface MemoryCreditTransaction {
+  id: string;
+  userId: string;
+  amount: number;
+  type: "bonus" | "charge" | "usage";
+  source: "summary_request" | "stripe_checkout" | "manual_adjustment";
+  packageId: string | null;
+  stripeEventId: string | null;
+  stripeSessionId: string | null;
+  createdAt: string;
+}
+
+export interface MemoryStripeWebhookEvent {
+  id: string;
+  stripeEventId: string;
+  eventType: string;
+  stripeSessionId: string | null;
+  createdAt: string;
+  processedAt: string;
+}
+
 declare global {
   var __docusummMemoryStore__:
     | {
         summaries: Map<string, MemorySummary>;
         jobs: Map<string, MemoryJob>;
         users: Map<string, MemoryUser>;
+        creditTransactions: Map<string, MemoryCreditTransaction>;
+        stripeWebhookEvents: Map<string, MemoryStripeWebhookEvent>;
       }
     | undefined;
 }
@@ -46,6 +69,8 @@ function createStore() {
     summaries: new Map<string, MemorySummary>(),
     jobs: new Map<string, MemoryJob>(),
     users: new Map<string, MemoryUser>(),
+    creditTransactions: new Map<string, MemoryCreditTransaction>(),
+    stripeWebhookEvents: new Map<string, MemoryStripeWebhookEvent>(),
   };
 }
 

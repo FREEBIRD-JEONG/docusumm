@@ -21,8 +21,6 @@ interface OAuthProviderOption {
 
 const PROVIDERS: OAuthProviderOption[] = [
   { id: "google", label: "Google로 로그인", provider: "google" },
-  { id: "kakao", label: "Kakao로 로그인", provider: "kakao" },
-  { id: "naver", label: "Naver로 로그인", provider: "keycloak" },
 ];
 
 export function LoginForm({ nextPath, callbackError }: LoginFormProps) {
@@ -46,12 +44,6 @@ export function LoginForm({ nextPath, callbackError }: LoginFormProps) {
         provider: option.provider,
         options: {
           redirectTo: redirectUrl.toString(),
-          queryParams:
-            option.id === "naver"
-              ? {
-                  kc_idp_hint: "naver",
-                }
-              : undefined,
         },
       });
 

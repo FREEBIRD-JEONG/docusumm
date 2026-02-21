@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { listSummariesByUser } from "@/db/repositories/summary-repository";
-import { getGuestUserId, isAuthEnabled } from "@/lib/auth/runtime";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { deleteSummariesByUser, listSummariesByUser } from "@/db/repositories/summary-repository";
+import { resolveApiUser } from "@/lib/auth/api-user";
 
 export const dynamic = "force-dynamic";
 
@@ -15,29 +14,9 @@ function parseLimit(url: URL): number {
 }
 
 export async function GET(request: Request) {
-  let userId: string;
-
-  if (!isAuthEnabled()) {
-    userId = getGuestUserId();
-  } else {
-    try {
-      const supabase = await createSupabaseServerClient();
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
-      if (error || !user) {
-        return NextResponse.json({ error: "로그인이 필요합니다. 다시 로그인해 주세요." }, { status: 401 });
-      }
-
-      userId = user.id;
-    } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "인증 확인 중 오류가 발생했습니다." },
-        { status: 500 },
-      );
-    }
+  const { userId, errorResponse } = await resolveApiUser();
+  if (errorResponse) {
+    return errorResponse;
   }
 
   const limit = parseLimit(new URL(request.url));
@@ -48,6 +27,23 @@ export async function GET(request: Request) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "요약 목록 조회 중 오류가 발생했습니다." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE() {
+  const { userId, errorResponse } = await resolveApiUser();
+  if (errorResponse) {
+    return errorResponse;
+  }
+
+  try {
+    const deletedCount = await deleteSummariesByUser(userId);
+    return NextResponse.json({ deletedCount }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "히스토리 삭제 중 오류가 발생했습니다." },
       { status: 500 },
     );
   }

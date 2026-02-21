@@ -1,14 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { upsertUserProfile } from "@/db/repositories/user-repository";
+import { resolveApiUser } from "@/lib/auth/api-user";
+import { sanitizeNextPath } from "@/lib/auth/next-path";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-
-function sanitizeNextPath(nextPath: string | null): string {
-  if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//")) {
-    return "/";
-  }
-  return nextPath;
-}
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
@@ -29,15 +23,9 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      await upsertUserProfile({
-        id: user.id,
-        email: user.email ?? `${user.id}@local.invalid`,
-      });
+    const { errorResponse } = await resolveApiUser({ ensureProfile: true });
+    if (errorResponse) {
+      throw new Error("failed to resolve authenticated user after oauth callback");
     }
 
     return NextResponse.redirect(new URL(nextPath, request.url));

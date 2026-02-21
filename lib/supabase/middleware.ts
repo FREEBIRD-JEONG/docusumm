@@ -1,21 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { sanitizeNextPath } from "@/lib/auth/next-path";
 import { isAuthEnabled } from "@/lib/auth/runtime";
 import { getSupabaseConfig } from "@/lib/supabase/config";
 
 function isPublicPage(pathname: string): boolean {
   return pathname === "/login" || pathname === "/auth/callback";
-}
-
-function sanitizeNextPath(nextPath: string): string {
-  if (!nextPath.startsWith("/")) {
-    return "/";
-  }
-  if (nextPath.startsWith("//")) {
-    return "/";
-  }
-  return nextPath;
 }
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
@@ -30,7 +21,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(config.url, config.anonKey, {
+  const supabase = createServerClient(config.url, config.publishableKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -78,7 +69,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   }
 
   if (userId && pathname === "/login") {
-    const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get("next") ?? "/");
+    const nextPath = sanitizeNextPath(request.nextUrl.searchParams.get("next"));
     return NextResponse.redirect(new URL(nextPath, request.url));
   }
 

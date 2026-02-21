@@ -28,7 +28,7 @@ docusumm/
 ├── hooks/                   # 커스텀 훅
 ├── types/                   # TypeScript 정의
 ├── utils/                   # 헬퍼 함수
-├── middleware.ts            # 인증 미들웨어
+├── proxy.ts                 # 인증 프록시 (Protected Routes)
 ├── drizzle/                 # Drizzle 마이그레이션 파일
 ├── drizzle.config.ts        # Drizzle 설정 파일
 └── public/                  # 정적 파일
@@ -116,6 +116,7 @@ create table public.credit_transactions (
 ### 3. 결제 로직 (Payment Logic - Stripe)
 
 -   **상품 구성**: 30 크레딧 ($5), 50 크레딧 ($8), 100 크레딧 ($15).
+-   **상품 관리 방식**: Stripe Dashboard 수동 생성 대신 Stripe MCP를 통해 상품/Price를 idempotent 동기화.
 -   **Webhook**: `checkout.session.completed` 이벤트를 수신하여 사용자 크레딧 증가 처리.
 
 ## 개발 설정 (Development Setup)

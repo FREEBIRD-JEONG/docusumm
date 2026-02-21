@@ -4,10 +4,12 @@ import {
   claimSummaryJobs,
   completeSummaryJob,
   failSummaryJob,
+  getSummaryOwnerEmail,
   markSummaryProcessing,
 } from "@/db/repositories/summary-repository";
 import { AppError } from "@/lib/errors/app-error";
 import { summarizeWithFallback } from "@/lib/gemini/summarize";
+import { sendSummaryCompletedEmail } from "@/lib/resend/client";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +148,30 @@ async function runWorker(request: Request) {
           failed += 1;
           continue;
         }
+
+        let emailStatus: "sent" | "skipped" | "error" = "skipped";
+        let emailSkipReason: string | null = null;
+        try {
+          const recipientEmail = await getSummaryOwnerEmail(job.summaryId);
+          const emailResult = await sendSummaryCompletedEmail({
+            toEmail: recipientEmail,
+            summaryId: job.summaryId,
+            summaryText,
+            originalContent: job.originalContent,
+            requestUrl: request.url,
+          });
+          emailStatus = emailResult.status;
+          emailSkipReason = emailResult.status === "skipped" ? emailResult.reason : null;
+        } catch (emailError) {
+          emailStatus = "error";
+          console.error("[summary-worker] summary-complete email failed", {
+            requestId,
+            summaryId: job.summaryId,
+            model,
+            message: emailError instanceof Error ? emailError.message : "unknown error",
+          });
+        }
+
         console.info("[summary-worker] job completed", {
           requestId,
           summaryId: job.summaryId,
@@ -153,6 +179,8 @@ async function runWorker(request: Request) {
           model,
           fallbackUsed: result.usedFallback,
           fallbackReasonCode: result.fallbackReasonCode ?? null,
+          emailStatus,
+          emailSkipReason,
         });
         completed += 1;
       } catch (error) {

@@ -21,7 +21,8 @@ pnpm install
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=
+# Legacy fallback: NEXT_PUBLIC_SUPABASE_ANON_KEY=
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_AUTH_ENABLED=false
 DEV_GUEST_USER_ID=00000000-0000-0000-0000-000000000001
@@ -47,6 +48,18 @@ YTDLP_AUTO_COOKIES_BROWSERS=chrome,brave,safari,firefox
 INTERNAL_WORKER_SECRET=
 CRON_SECRET=
 AUTO_TRIGGER_WORKER_ON_SUMMARY_CREATE=true
+
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=onboarding@resend.dev
+RESEND_FROM_NAME=DocuSumm
+
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_STARTER=
+STRIPE_PRICE_PRO=
+STRIPE_PRICE_MAX=
+# Optional: Stripe.js/Elements를 클라이언트에서 사용할 때만 필요
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=
 ```
 
 ### 3) 실행
@@ -64,6 +77,30 @@ YouTube 요약은 공개 영상의 자막을 가져와 처리합니다. 자막�
 일부 환경에서 YouTube timedtext가 차단되면 `yt-dlp` fallback으로 자막을 수집합니다.
 `YTDLP_COOKIES_FROM_BROWSER`를 지정하면 해당 브라우저 쿠키를 사용하고, 미지정 시 `YTDLP_AUTO_COOKIES_BROWSERS` 순서로 자동 재시도합니다.
 Gemini 429/5xx가 반복되면 `GEMINI_MODEL_CANDIDATES` 순서대로 모델 후보를 자동 시도합니다.
+
+요약이 `completed`로 확정되면 Resend를 통해 완료 알림 메일을 발송합니다.
+메일 내 "전체 요약 보기" 버튼은 `/dashboard?summaryId=<요약ID>` 딥링크로 연결됩니다.
+`@local.invalid` 같은 개발용 주소는 발송 대상에서 자동 제외됩니다.
+
+### 이메일 템플릿 미리보기 (React Email)
+
+```bash
+pnpm email:dev
+```
+
+- 기본 주소: `http://localhost:3001`
+- 샘플 데이터/프리뷰 엔트리: `emails/summary-completed-email.tsx`
+
+### Stripe 결제 설정 체크리스트
+
+1. Stripe MCP를 사용해 3개 상품/Price를 동기화:
+   - Starter: 30 credits / `$5`
+   - Pro: 50 credits / `$8`
+   - Max: 100 credits / `$15`
+2. MCP 실행 결과의 Price ID를 `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_MAX`에 설정
+3. MCP 재실행 시 중복 생성이 없도록 `lookup_key` 기반 idempotent 동기화 규칙을 사용
+4. Stripe Webhook Endpoint를 `POST /api/webhooks/stripe`로 등록
+5. Endpoint Secret을 `STRIPE_WEBHOOK_SECRET`에 설정
 
 ### Gemini 429 대응 체크리스트
 

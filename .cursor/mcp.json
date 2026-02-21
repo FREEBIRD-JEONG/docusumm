@@ -2,6 +2,9 @@
   "mcpServers": {
     "context7": {
       "url": "https://mcp.context7.com/mcp"
+    },
+    "stripe": {
+      "url": "https://mcp.stripe.com"
     }
   }
 }
