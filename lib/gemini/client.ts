@@ -110,7 +110,8 @@ function isRetryableRequestError(error: unknown, status: number | undefined): bo
     return false;
   }
 
-  return /rate limit|too many requests|resource exhausted|overloaded|temporar(?:y|ily) unavailable/i.test(
+  // "fetch failed"는 SDK가 AbortError/네트워크 오류를 래핑한 것 → 다음 모델 후보로 전환
+  return /rate limit|too many requests|resource exhausted|overloaded|temporar(?:y|ily) unavailable|fetch failed/i.test(
     error.message,
   );
 }
