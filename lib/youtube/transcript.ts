@@ -81,6 +81,10 @@ function shouldAllowLocalTranscriptFallback(): boolean {
   return parseBoolean(process.env.TRANSCRIPT_REMOTE_FALLBACK_LOCAL);
 }
 
+function isRemoteWorkerConfigured(): boolean {
+  return Boolean(process.env.TRANSCRIPT_WORKER_URL?.trim());
+}
+
 function buildPromptContext({
   normalizedUrl,
   videoId,
@@ -987,44 +991,46 @@ export async function buildYouTubePromptContext(content: string): Promise<YouTub
     throw new AppError("영상 ID를 추출하지 못했습니다.", "YOUTUBE_URL_INVALID", 422);
   }
 
-  try {
-    const remote = await fetchRemoteYouTubeTranscript({
-      youtubeUrl: normalizedUrl,
-      requestId: `transcript-${videoId}`,
-      preferredLanguages: NO_TRACK_LANGUAGE_CANDIDATES,
-      maxChars: TRANSCRIPT_MAX_CHARS,
-    });
+  if (isRemoteWorkerConfigured()) {
+    try {
+      const remote = await fetchRemoteYouTubeTranscript({
+        youtubeUrl: normalizedUrl,
+        requestId: `transcript-${videoId}`,
+        preferredLanguages: NO_TRACK_LANGUAGE_CANDIDATES,
+        maxChars: TRANSCRIPT_MAX_CHARS,
+      });
 
-    console.info("[youtube-transcript] remote transcript succeeded", {
-      videoId,
-      provider: remote.provider,
-      languageCode: remote.languageCode,
-      transcriptChars: remote.transcript.length,
-      durationMs: remote.durationMs,
-    });
+      console.info("[youtube-transcript] remote transcript succeeded", {
+        videoId,
+        provider: remote.provider,
+        languageCode: remote.languageCode,
+        transcriptChars: remote.transcript.length,
+        durationMs: remote.durationMs,
+      });
 
-    return buildPromptContext({
-      normalizedUrl,
-      videoId: remote.videoId || videoId,
-      title: remote.title,
-      languageCode: remote.languageCode,
-      transcript: remote.transcript,
-    });
-  } catch (error) {
-    const resolvedError =
-      error instanceof AppError
-        ? error
-        : new AppError("외부 transcript worker 호출 중 알 수 없는 오류", "TRANSCRIPT_WORKER_UNAVAILABLE", 502);
-    const localFallbackEnabled = shouldAllowLocalTranscriptFallback();
+      return buildPromptContext({
+        normalizedUrl,
+        videoId: remote.videoId || videoId,
+        title: remote.title,
+        languageCode: remote.languageCode,
+        transcript: remote.transcript,
+      });
+    } catch (error) {
+      const resolvedError =
+        error instanceof AppError
+          ? error
+          : new AppError("외부 transcript worker 호출 중 알 수 없는 오류", "TRANSCRIPT_WORKER_UNAVAILABLE", 502);
+      const localFallbackEnabled = shouldAllowLocalTranscriptFallback();
 
-    console.info("[youtube-transcript] remote transcript failed", {
-      videoId,
-      errorCode: resolvedError.code,
-      localFallbackEnabled,
-    });
+      console.info("[youtube-transcript] remote transcript failed, trying local", {
+        videoId,
+        errorCode: resolvedError.code,
+        localFallbackEnabled,
+      });
 
-    if (!localFallbackEnabled) {
-      throw resolvedError;
+      if (!localFallbackEnabled) {
+        throw resolvedError;
+      }
     }
   }
 

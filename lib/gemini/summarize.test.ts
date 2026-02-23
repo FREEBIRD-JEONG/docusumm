@@ -60,39 +60,40 @@ describe("summarizeWithFallback", () => {
     expect(result.summaryText).toContain("정상 요약 결과");
   });
 
-  it("throws original app error when text request fails", async () => {
+  it("returns fallback summary when text request fails", async () => {
     mockedGenerateWithGemini.mockRejectedValue(
       new AppError("rate limit", "GEMINI_REQUEST_FAILED", 502),
     );
 
-    await expect(
-      summarizeWithFallback({
-        sourceType: "text",
-        content: "이 문장은 오류 전파 테스트를 위한 본문입니다. 두 번째 문장입니다. 세 번째 문장입니다.",
-        requestId: "test-request-id",
-      }),
-    ).rejects.toMatchObject({
-      code: "GEMINI_REQUEST_FAILED",
+    const result = await summarizeWithFallback({
+      sourceType: "text",
+      content: "이 문장은 오류 전파 테스트를 위한 본문입니다. 두 번째 문장입니다. 세 번째 문장입니다.",
+      requestId: "test-request-id",
     });
+
+    expect(validateSummaryFormat(result.summaryText)).toBe(true);
   });
 
-  it("throws transcript blocked error when youtube transcript context fails", async () => {
+  it("returns generic fallback when youtube transcript context fails", async () => {
     mockedBuildYouTubePromptContext.mockRejectedValue(
       new AppError("blocked", "YOUTUBE_TRANSCRIPT_BLOCKED", 502),
     );
+    // URL-based summarization also fails
+    mockedGenerateWithGemini.mockRejectedValue(
+      new AppError("url summary failed", "GEMINI_REQUEST_FAILED", 502),
+    );
 
-    await expect(
-      summarizeWithFallback({
-        sourceType: "youtube",
-        content: "https://www.youtube.com/watch?v=abc123def45",
-        requestId: "test-request-id",
-      }),
-    ).rejects.toMatchObject({
-      code: "YOUTUBE_TRANSCRIPT_BLOCKED",
+    const result = await summarizeWithFallback({
+      sourceType: "youtube",
+      content: "https://www.youtube.com/watch?v=abc123def45",
+      requestId: "test-request-id",
     });
+
+    expect(validateSummaryFormat(result.summaryText)).toBe(true);
+    expect(result.summaryText).toContain("abc123def45");
   });
 
-  it("throws gemini request error for youtube when model call fails", async () => {
+  it("returns extractive transcript fallback when gemini fails for youtube", async () => {
     mockedBuildYouTubePromptContext.mockResolvedValue({
       promptInput: [
         "YouTube URL: https://www.youtube.com/watch?v=abc123def45",
@@ -113,14 +114,13 @@ describe("summarizeWithFallback", () => {
       new AppError("rate limit", "GEMINI_REQUEST_FAILED", 502),
     );
 
-    await expect(
-      summarizeWithFallback({
-        sourceType: "youtube",
-        content: "https://www.youtube.com/watch?v=abc123def45",
-        requestId: "test-request-id",
-      }),
-    ).rejects.toMatchObject({
-      code: "GEMINI_REQUEST_FAILED",
+    const result = await summarizeWithFallback({
+      sourceType: "youtube",
+      content: "https://www.youtube.com/watch?v=abc123def45",
+      requestId: "test-request-id",
     });
+
+    expect(validateSummaryFormat(result.summaryText)).toBe(true);
+    expect(result.summaryText).toContain("자막 기반 추출 요약");
   });
 });

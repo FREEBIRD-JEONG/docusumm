@@ -15,10 +15,12 @@ describe("buildYouTubePromptContext remote-first flow", () => {
   beforeEach(() => {
     mockedFetchRemoteYouTubeTranscript.mockReset();
     process.env.TRANSCRIPT_REMOTE_FALLBACK_LOCAL = "0";
+    process.env.TRANSCRIPT_WORKER_URL = "https://worker.example.com";
   });
 
   afterEach(() => {
     delete process.env.TRANSCRIPT_REMOTE_FALLBACK_LOCAL;
+    delete process.env.TRANSCRIPT_WORKER_URL;
   });
 
   it("returns prompt context from remote transcript payload", async () => {
