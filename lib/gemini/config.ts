@@ -17,11 +17,11 @@ interface GeminiRuntimeConfig {
 
 const DEFAULTS = {
   model: "gemini-2.0-flash",
-  apiVersion: "v1",
+  apiVersion: "v1beta",
   timeoutMs: 45_000,
   maxRetries: 2,
   retryBaseDelayMs: 700,
-  maxOutputTokens: 1200,
+  maxOutputTokens: 8192,
   temperature: 0.2,
   topP: 0.9,
   logLevel: "info" as GeminiLogLevel,

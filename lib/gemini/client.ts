@@ -3,6 +3,9 @@ import { GoogleGenAI } from "@google/genai";
 import { AppError } from "@/lib/errors/app-error";
 import { getGeminiRuntimeConfig } from "@/lib/gemini/config";
 
+// YouTube URL 처리 또는 긴 요약 생성에 필요한 최소 토큰 수
+const MIN_SUMMARY_OUTPUT_TOKENS = 4096;
+
 interface GenerateWithGeminiOptions {
   requestId?: string;
   fileUri?: string;
@@ -178,9 +181,10 @@ export async function generateWithGemini(
   for (let modelIndex = 0; modelIndex < modelCandidates.length; modelIndex += 1) {
     const model = modelCandidates[modelIndex];
     const isThinkingModel = /gemini-2\.5/i.test(model);
+    // 2.5 모델은 thinking budget 포함이므로 최소 8192, 그 외도 요약 품질을 위해 최소 4096 보장
     const effectiveMaxOutputTokens = isThinkingModel
       ? Math.max(config.maxOutputTokens, 8192)
-      : config.maxOutputTokens;
+      : Math.max(config.maxOutputTokens, MIN_SUMMARY_OUTPUT_TOKENS);
     let attempt = 0;
 
     while (true) {
